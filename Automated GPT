@@ -1,0 +1,77 @@
+#@title MKV (Strict Sensitivity) (Originally known as MK 5 Part 2)
+
+#ReadMe: The saving to CSV does not work very well. It seems to sometimes omit data so I found it easier to just copy and paper everything from the terminal into notepad and saved it as CSV. Sometimes some of the school names with commas might still be messed up. 
+
+from openai import OpenAI
+import csv
+import time
+import re
+
+# Helper function to escape fields for CSV compatibility
+def escape_csv_field(field):
+    field = field.strip()
+    if '"' in field:
+        field = field.replace('"', '""')
+    if ',' in field or '"' in field:
+        field = f'"{field}"'
+    return field
+
+# New function: Only keep fields with a course code (e.g., "MECHENG 565: Battery Systems and Control")
+def is_valid_course(field):
+    # Accepts formats like "ABC 123: ..." or "ABC1234: ..."
+    # You can adjust this pattern to be stricter/looser as needed
+    return bool(re.match(r'\b[A-Z]{2,}\s?\d{3,4}[:\-]', field.strip()))
+
+# Insert your OpenAI API key below
+client = OpenAI(
+    api_key="" #insert you API key here
+)
+i = 0
+
+with open('schools.csv', newline='') as csvfile:
+    reader = csv.reader(csvfile, delimiter=',', quotechar='|')
+    for line in reader:
+        userinput = line[0]
+        print(userinput)  # This is the school name to send to ChatGPT
+
+        # Call ChatGPT to do something
+        response = client.responses.create(
+            model="gpt-4.1",
+            tools=[{"type": "web_search_preview"}],
+            instructions=(
+                "DO not generate any output except for a single row of plain, valid CSV with no headers, bullet points, dashes, narrative text, line breaks, markdown, summaries, explanations, or extra formatting. "
+                "The CSV row must begin with the full official name of the school, followed by a single word Yes, No, or Website timeout in the second column. "
+                "Starting with the third column, list only the exact official names of all detected credit-bearing academic courses that have an official university course code (such as 'MECHENG 565: Battery Systems and Control'). "
+                "Do not include topics, modules, specializations, certificates, programs, or any item that does not have a university course code. "
+                "Only include offerings that directly focus on battery chemistry, battery materials, electrochemical energy storage, battery management systems (BMS), embedded battery control, SOC/SOH estimation, thermal runaway, lifecycle analysis, battery modeling, battery simulation, QA protocols, battery pack integration, anode or cathode design, redox processes, or solid-state or lithium-ion battery systems in a scientific or engineering context. "
+                "Exclude any courses that only mention batteries in passing, general electronics, electrical maintenance, circuit design, power systems or energy storage courses not specifically about batteries, solar/battery hybrid content where batteries are secondary or not explicitly studied, and any course or program focused on electric vehicles (EVs), EV systems, propulsion, integration, diagnostics, infrastructure, hybrid electric vehicles, smart mobility, or automotive battery systems. "
+                "If the course or program does not clearly and specifically teach battery-focused science or engineering and does not include an official university course code, it should not be included. "
+                "If no valid courses are found, output only the school name and No. If the website times out, output only the school name and Website timeout. "
+                "Do not output any narration, explanations, lists, quotes, or any additional lines before or after the CSV row."
+            ),
+            input=userinput,
+        )
+        print(response.output_text)  # print output for inspection
+
+        # Split the GPT response into fields
+        raw_fields = [userinput] + response.output_text.split(',')
+
+        # Always keep first two fields (school name and Yes/No/Website timeout)
+        cleaned_fields = [escape_csv_field(raw_fields[0])]
+        if len(raw_fields) > 1:
+            cleaned_fields.append(escape_csv_field(raw_fields[1]))
+
+        # Only keep valid courses (with course code) for all remaining fields
+        for f in raw_fields[2:]:
+            if is_valid_course(f):
+                cleaned_fields.append(escape_csv_field(f))
+
+        # Write the row as a single properly-formatted CSV line
+        with open("output.csv", mode="a", newline="") as file:
+            file.write(','.join(cleaned_fields) + '\n')
+
+        # time.sleep(20)  # sleep for 20 seconds to deal with chatgpt data throttling on free version
+
+        # i += 1
+        # if i % 3 == 0:
+        #     break
